@@ -1,0 +1,32 @@
+data:
+  img_dir: /root/lanyun-tmp/seaLab/data/train_ssha_png
+  lbl_dir: /root/lanyun-tmp/seaLab/data/train_mask_png
+train:
+  out_dir: results_deeplabv3_500
+  batch_size: 2
+  epochs: 500
+  lr: 0.0001
+  weight_decay: 0.0001
+  train_ratio: 0.8
+  seed: 42
+  device: cuda
+  num_workers: 4
+  pin_memory: true
+  save_interval_steps: 10001
+  save_interval_epochs: 5
+  freeze_bn: true
+model:
+  # name: unet                   # 或 "deeplabv3+"
+  name: deeplabv3+                   # 或 "deeplabv3+"
+  num_classes: 3
+  backbone: resnet50
+  pretrained_backbone: false
+
+evaluation:
+  weights: results_deeplabv3_500/best_model.pth
+  result_dir: evl_deeplabv3_500/
+  device: cuda
+  colors:
+    - [0,0,255]
+    - [255,255,255]
+    - [0,255,0]
