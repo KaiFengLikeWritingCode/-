@@ -1,6 +1,6 @@
 input: "sea_temperature_water_velocity.nc"
 
-# 滑动窗口长度和预测步长
+# 滑动窗口长度和预测步长 96 192
 window: 96
 horizon: 16
 
@@ -10,9 +10,9 @@ alpha: 2000   # 惩罚因子
 tau: 0        # 噪声容忍度
 tol: 1e-6     # 收敛阈值
 
-# LSTM 网络配置
-hidden: 128   # 隐藏层维度
-layers: 2     # LSTM 层数
+# LSTM 网络配置 128 2
+hidden: 256   # 隐藏层维度 256
+layers: 3    # LSTM 层数 3
 dropout: 0.2  # Dropout 比例
 
 # 随机种子
