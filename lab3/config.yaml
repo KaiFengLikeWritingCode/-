@@ -1,0 +1,23 @@
+input: "sea_temperature_water_velocity.nc"
+
+# 滑动窗口长度和预测步长
+window: 96
+horizon: 16
+
+# VMD 参数
+k: 4          # 模态数量
+alpha: 2000   # 惩罚因子
+tau: 0        # 噪声容忍度
+tol: 1e-6     # 收敛阈值
+
+# LSTM 网络配置
+hidden: 128   # 隐藏层维度
+layers: 2     # LSTM 层数
+dropout: 0.2  # Dropout 比例
+
+# 随机种子
+seed: 42
+
+# 训练策略
+max_epochs: 100   # 最多训练轮数
+patience: 20     # 验证集 EarlyStopping 耐心值
