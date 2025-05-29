@@ -19,5 +19,5 @@ dropout: 0.2  # Dropout 比例
 seed: 42
 
 # 训练策略
-max_epochs: 100   # 最多训练轮数
+max_epochs: 50   # 最多训练轮数
 patience: 20     # 验证集 EarlyStopping 耐心值

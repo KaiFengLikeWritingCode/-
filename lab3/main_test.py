@@ -3,15 +3,11 @@
 """
 test_joint_lstm.py
 
-测试端到端多通道 Joint LSTM 模型。
-1. 加载 config.yaml
-2. 加载 NetCDF 数据并做 VMD 分解
-3. 构建多通道滑窗验证集 X_val, Y_val
-4. 加载训练好的 JointLSTM 权重
-5. 滑窗做 1-step 预测，保存 plots/forecast_1step_test.png
-6. 滑窗多步预测叠加，保存 plots/forecast_overlay_test.png
+加载训练好的 JointLSTM，做滑窗 1-step & 多步叠加预测，并可视化：
+  - 原始全序列（蓝）
+  - 1-step 连续预测（红）
+  - 训练/验证分割线（绿虚线）
 """
-
 import os
 import yaml
 import numpy as np
@@ -25,7 +21,7 @@ import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler
 from vmdpy import VMD
 
-# -----------------------------
+# -----------------------------------------------------------------------------
 def load_config(path='config.yaml'):
     with open(path, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
@@ -76,78 +72,107 @@ class JointLSTM(nn.Module):
         last = out[:, -1, :]
         return self.fc(self.drop(last))
 
-# -----------------------------
+# -----------------------------------------------------------------------------
 if __name__ == '__main__':
-    # 1. 加载配置与环境
-    cfg = load_config('config.yaml')
+    cfg    = load_config('config.yaml')
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     os.makedirs('plots', exist_ok=True)
 
-    # 2. 加载数据 & 归一化
+    # 1. 加载 & 归一化
     ts, time = load_sst(cfg['input'])
     ts_norm, g_scaler = normalize(ts)
 
-    # 3. VMD 分解 & 构建滑窗验证集
+    # 2. VMD 分解 & 构造滑窗
     modes = vmd_decompose(ts_norm, cfg)  # (N, K)
-    X, Y = build_multi_dataset(modes, ts_norm,
-                               cfg['window'], cfg['horizon'])
-    M = len(X)
+    # X, Y  = build_multi_dataset(modes, ts_norm,
+    #                             cfg['window'], cfg['horizon'])
+
+    # -- 新增：生成周期特征 sin/cos
+    months = time.month.values
+    sin_m = np.sin(2 * np.pi * (months - 1) / 12)[:, None]  # (N,1)
+    cos_m = np.cos(2 * np.pi * (months - 1) / 12)[:, None]  # (N,1)
+
+    # 把 VMD 模态和周期特征拼成 (N, K+2)
+    features = np.concatenate([modes, sin_m, cos_m], axis=1)
+
+    # 现在用 features（K+2 通道）来构建滑窗
+    X, Y = build_multi_dataset(features, ts_norm,
+                                +                           cfg['window'], cfg['horizon'])
+
+
+
+    M     = len(X)
     split = int(0.8 * M)
     X_val = X[split:]
     Y_val = Y[split:]
-    # 对应时间索引，用于画图
-    times_val = time[ split + cfg['window'] : split + cfg['window'] + len(Y_val) ]
+    # 滑窗对应的时刻（第一步时间点）
+    times1 = time[ split + cfg['window'] : split + cfg['window'] + len(X_val) ]
 
-    # 4. 加载模型
-    model = JointLSTM(cfg['k'], cfg['hidden'],
+    # 3. 加载模型
+    # model = JointLSTM(cfg['k'], cfg['hidden'],
+    #                   cfg['layers'], cfg['horizon'],
+    #                   cfg['dropout'])
+    in_ch = cfg['k'] + 2
+    model = JointLSTM(in_ch, cfg['hidden'],
                       cfg['layers'], cfg['horizon'],
                       cfg['dropout'])
-    model.load_state_dict(
-        torch.load('models/joint_lstm.pth', map_location=device)
-    )
+    # model.load_state_dict(
+    #     torch.load('models/joint_lstm.pth', map_location=device)
+    # )
+    state = torch.load('models/joint_lstm.pth',
+                        map_location = device,
+                        weights_only = True)
+    model.load_state_dict(state)
+
+
     model.to(device).eval()
 
-    # 5. 滑窗 1-step 预测
-    preds1, trues1 = [], []
+    # 4. 滑窗 1-step 预测
+    preds1 = []
     with torch.no_grad():
         for i in range(len(X_val)):
             seq = X_val[i].unsqueeze(0).to(device)      # (1, window, K)
-            y_norm = model(seq).cpu().numpy().flatten() # (horizon,)
-            preds1.append(y_norm[0])                    # 第一时刻预测
-            trues1.append(Y_val[i,0].item())            # 真值
+            yh  = model(seq).cpu().numpy().flatten()    # (horizon,)
+            preds1.append(yh[0])                        # 1-step
     preds1 = np.array(preds1)
-    trues1 = np.array(trues1)
-    # 反归一化
-    preds1_abs = g_scaler.inverse_transform(preds1.reshape(-1,1)).flatten()
-    trues1_abs = g_scaler.inverse_transform(trues1.reshape(-1,1)).flatten()
+    preds1_abs = g_scaler.inverse_transform(
+        preds1.reshape(-1,1)
+    ).flatten()
 
-    # 绘制 1-step 预测
-    plt.figure(figsize=(10,4))
-    plt.plot(time, ts, color='C0', alpha=0.3, label='Original')
-    plt.plot(times_val, preds1_abs, color='C1', label='1-step Forecast')
-    plt.xlabel('Time'); plt.ylabel('Sea Surface Temperature')
+    # 5. 画图：原始 + 1-step + 分界线
+    plt.figure(figsize=(12,5))
+    plt.plot(time, ts, color='C0', alpha=0.4, label='real')
+    plt.plot(times1, preds1_abs, color='C1', lw=1, label='prediction')
+    # 训练/验证分界
+    split_time = time[ split + cfg['window'] ]
+    plt.axvline(split_time, color='g', linestyle='--', lw=1.5)
+    plt.legend(); plt.xlabel('Time'); plt.ylabel('SST')
     plt.title('1-step Joint LSTM Forecast')
-    plt.legend(); plt.tight_layout()
-    plt.savefig('plots/forecast_1step_test.png', dpi=300)
+    plt.tight_layout()
+    plt.savefig('plots/forecast_1step_test2.png', dpi=300)
     plt.close()
 
-    # 6. 滑窗多步预测叠加
-    plt.figure(figsize=(10,4))
-    plt.plot(time, ts, color='C0', alpha=0.3, label='Original')
+    # 6. 滑窗多步自回归叠加
+    plt.figure(figsize=(12,5))
+    plt.plot(time, ts, color='C0', alpha=0.4)
     with torch.no_grad():
         for i in range(len(X_val)):
             seq = X_val[i].unsqueeze(0).to(device)
-            y_norm = model(seq).cpu().numpy().flatten()  # (horizon,)
-            y_abs  = g_scaler.inverse_transform(y_norm.reshape(-1,1)).flatten()
-            start = times_val[i]
-            dates = [start + pd.Timedelta(days=j) for j in range(cfg['horizon'])]
-            plt.plot(dates, y_abs, color='C1', alpha=0.15)
-    plt.xlabel('Time'); plt.ylabel('Sea Surface Temperature')
+            y_seq = model(seq).cpu().numpy().flatten()  # (horizon,)
+            y_abs = g_scaler.inverse_transform(
+                y_seq.reshape(-1,1)
+            ).flatten()
+            t0 = times1[i]
+            dates = [t0 + pd.Timedelta(days=j)
+                     for j in range(cfg['horizon'])]
+            plt.plot(dates, y_abs, color='C1', alpha=0.2)
+    plt.axvline(split_time, color='g', linestyle='--', lw=1.5)
+    plt.xlabel('Time'); plt.ylabel('SST')
     plt.title('Multi-step Joint LSTM Forecast Overlay')
     plt.tight_layout()
-    plt.savefig('plots/forecast_overlay_test.png', dpi=300)
+    plt.savefig('plots/forecast_overlay_test2.png', dpi=300)
     plt.close()
 
-    print("Test forecasts saved under plots/:")
-    print(" - 1-step:        plots/forecast_1step_test.png")
-    print(" - multi-step:    plots/forecast_overlay_test.png")
+    print("Saved:")
+    print(" - plots/forecast_1step_test.png")
+    print(" - plots/forecast_overlay_test.png")
