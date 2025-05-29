@@ -1,0 +1,25 @@
+# data path
+input: 'data/raw/sea_temperature.nc'
+
+# VMD 参数
+k: 4
+alpha: 2000
+tau: 0
+tol: 1e-6
+
+# 滑窗与预测步长
+window: 96
+horizon: 16
+
+# 模型超参
+hidden: 128
+layers: 2
+dropout: 0.2
+
+# 训练
+batch_size: 64
+max_epochs: 50
+patience: 10
+
+# 随机种子
+seed: 42
