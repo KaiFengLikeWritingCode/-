@@ -334,7 +334,12 @@ def main():
         writer.add_scalar("Loss/val",   val_loss, epoch)
         writer.add_scalar("RMSE/val",   val_rmse, epoch)
 
-
+        writer.add_scalar("Loss/train", trn_loss, epoch)
+        writer.add_scalar("Loss/val",   val_loss, epoch)
+        writer.add_scalar("RMSE/val",   val_rmse, epoch)
+        train_losses.append(trn_loss)
+        val_losses.append(val_loss)
+        val_rmses.append(val_rmse)
 
         # 在这里用 验证 RMSE 驱动 LR 衰减
         scheduler.step(val_rmse)
@@ -351,6 +356,27 @@ def main():
     model.load_state_dict(torch.load(os.path.join(MODEL_DIR, "best.pth")))
     test_loss, test_rmse = eval_epoch(model, test_loader)
     print(f"Test RMSE = {test_rmse:.4f}")
+
+    writer.close()
+    epochs = range(1, len(train_losses) + 1)
+    plt.figure()
+    plt.plot(epochs, train_losses, label="Train Loss")
+    plt.plot(epochs, val_losses,   label="Val Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.title("Training and Validation Loss")
+    plt.savefig("loss_curve.png")   # 保存图片
+    plt.close()
+
+    plt.figure()
+    plt.plot(epochs, val_rmses, label="Val RMSE")
+    plt.xlabel("Epoch")
+    plt.ylabel("RMSE")
+    plt.legend()
+    plt.title("Validation RMSE")
+    plt.savefig("rmse_curve.png")
+    plt.close()
 
 
 if __name__ == "__main__":
